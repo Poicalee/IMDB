@@ -97,7 +97,54 @@ def execute_pg_query(query):
 
 # Funkcja zapisująca wyniki do pliku Excel
 # Funkcja zapisująca wyniki do pliku Excel
-def save_results_to_excel(ch_results, pg_results):
+def load_queries_from_file(file_path):
+    """
+    Wczytuje zapytania z pliku i dzieli je na grupy na podstawie nagłówków.
+    """
+    queries = {}
+    current_group = None
+
+    with open(file_path, 'r') as file:
+        for line in file:
+            line = line.strip()
+            if line.startswith("[") and line.endswith("]"):
+                current_group = line[1:-1]
+                queries[current_group] = []
+            elif line and current_group:
+                queries[current_group].append(line)
+
+    return queries
+
+
+def execute_queries_by_group(queries, db_type="ClickHouse"):
+    """
+    Wykonuje zapytania podzielone na grupy dla podanej bazy danych (ClickHouse lub PostgreSQL).
+    """
+    results = []
+
+    for group, query_list in queries.items():
+        print(f"\nExecuting queries in group: {group}")
+
+        for query in query_list:
+            print(f"Executing: {query}")
+            if db_type == "ClickHouse":
+                result = execute_clickhouse_query(query)
+            elif db_type == "PostgreSQL":
+                result = execute_pg_query(query)
+            else:
+                raise ValueError("Unsupported database type.")
+
+            # Dodaj wyniki do listy
+            results.append((group, db_type, result))
+            save_results_to_excel(result, group, db_type)
+
+    return results
+
+
+def save_results_to_excel(results, group, db_type):
+    """
+    Zapisuje wyniki do pliku Excel z podziałem na grupy.
+    """
     try:
         wb = load_workbook("query_comparison.xlsx")
         ws = wb.active
@@ -106,37 +153,29 @@ def save_results_to_excel(ch_results, pg_results):
         ws = wb.active
         ws.title = "Query Comparison"
         ws.append([
-            "Database", "Execution Time (s)", "Connection Time (s)",
+            "Group", "Database", "Execution Time (s)", "Connection Time (s)",
             "CPU Before (%)", "CPU After (%)",
             "Memory Before (%)", "Memory After (%)", "Result Rows"
         ])
 
-    # Wyniki dla ClickHouse
+    # Dodaj wyniki do arkusza
     ws.append([
-        "ClickHouse", ch_results["execution_time"], ch_results["connect_time"],
-        ch_results["cpu_before"], ch_results["cpu_after"],
-        ch_results["memory_before"], ch_results["memory_after"],
-        len(ch_results["result"])
-    ])
-
-    # Wyniki dla PostgreSQL
-    ws.append([
-        "PostgreSQL", pg_results["execution_time"], pg_results["connect_time"],
-        pg_results["cpu_before"], pg_results["cpu_after"],
-        pg_results["memory_before"], pg_results["memory_after"],
-        len(pg_results["result"])
+        group, db_type, results["execution_time"], results["connect_time"],
+        results["cpu_before"], results["cpu_after"],
+        results["memory_before"], results["memory_after"],
+        len(results["result"])
     ])
 
     wb.save("query_comparison.xlsx")
-    print("Wyniki zapisane w pliku query_comparison.xlsx")
+    print(f"Wyniki zapisane w pliku query_comparison.xlsx dla grupy {group} ({db_type}).")
 
 
-# Przykładowe zapytanie
-query = "SELECT f.FLIGHT_NUMBER, f.SCHEDULED_DEPARTURE, f.DEPARTURE_DELAY, f.ARRIVAL_DELAY, o.IATA_CODE AS ORIGIN_AIRPORT, o.CITY AS ORIGIN_CITY, o.COUNTRY AS ORIGIN_COUNTRY, d.IATA_CODE AS DESTINATION_AIRPORT, d.CITY AS DESTINATION_CITY, d.COUNTRY AS DESTINATION_COUNTRY FROM flights f JOIN Airports o ON f.ORIGIN_AIRPORT = o.IATA_CODE JOIN Airports d ON f.DESTINATION_AIRPORT = d.IATA_CODE WHERE f.DEPARTURE_DELAY > 30;"
+# Wczytanie zapytań z pliku
+queries = load_queries_from_file("queries.txt")
 
+# Wykonanie zapytań w ClickHouse
+execute_queries_by_group(queries, db_type="ClickHouse")
 
-# Wykonanie zapytania w ClickHouse i PostgreSQL oraz zapisanie wyników do Excel
-clickhouse_results = execute_clickhouse_query(query)
-pg_results = execute_pg_query(query)
-save_results_to_excel(clickhouse_results, pg_results)
+# Wykonanie zapytań w PostgreSQL
+# execute_queries_by_group(queries, db_type="PostgreSQL")
 
